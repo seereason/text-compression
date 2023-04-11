@@ -3,6 +3,7 @@
 {-# LANGUAGE Strict           #-}
 {-# LANGUAGE DeriveGeneric    #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE OverloadedLists  #-}
 
 
 -- |
@@ -63,6 +64,7 @@ module Data.BWT.Internal ( -- * Base BWT types
 
 import Control.Monad as CM
 import Control.Monad.ST as CMST
+import Control.Monad.Writer
 import Data.Maybe as DMaybe (fromJust,isNothing)
 import Data.Sequence as DS (Seq(..),empty,findIndexL,fromList,length,index,inits,null,tails,unstableSortBy,unstableSortOn,zip,(><),(|>),(<|))
 import Data.STRef as DSTR
@@ -190,6 +192,23 @@ emptySTBWTCounter = newSTRef (-1)
 -- | "Magic" Inverse BWT function.
 magicInverseBWT :: Seq (Maybe a,Int)
                 -> BWTSeq a
+magicInverseBWT DS.Empty = DS.empty
+magicInverseBWT xs =
+  case (DS.findIndexL (\x -> isNothing $ fst x) xs) of
+    Nothing -> DS.Empty
+    Just nothingindex -> do
+      let nothingfirst = DS.index xs nothingindex
+      execWriter $ iBWT (snd nothingfirst) nothingindex xs
+  where
+    iBWT :: Int -> Int -> Seq (Maybe a, Int) -> Writer (Seq a) ()
+    iBWT count1 count2 ys =
+      when (count1 /= count2) $ do
+        case DS.index ys count1 of
+          (Just a, b) -> do
+            tell [a]
+            iBWT b count2 ys
+          _ -> error "magicInverseBWT"
+{-
 magicInverseBWT DS.Empty = CMST.runST $ do
   bwtseqstackempty  <- emptySTBWTSeq
   bwtseqstackemptyr <- readSTRef bwtseqstackempty
@@ -227,6 +246,7 @@ magicInverseBWT xs       = CMST.runST $ do
                  bwtss
                  bwtcsf
                  bwtcse
+-}
 
 {--------------------}
 

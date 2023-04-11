@@ -95,12 +95,12 @@ module Data.MTF.Internal ( -- * Base MTF types
 
 import Control.Monad as CM
 import Control.Monad.ST as CMST
-import Data.ByteString as BS
+import Data.ByteString as BS hiding (count)
 import Data.Foldable as DFold (foldr')
 import Data.Set as DSet
 import Data.Sequence as DS (Seq(..),deleteAt,findIndexL,empty,index,unstableSort,(|>),(<|))
 import Data.STRef as DSTR
-import Data.Text as DText
+import Data.Text as DText hiding (count)
 import GHC.Generics (Generic)
 import Prelude as P
 
@@ -217,6 +217,32 @@ emptySTMTFCounterB = newSTRef (-1)
 -- | Strict state monad function.
 seqToMTFB :: PBMTFSeqB
           -> MTFLSSeqB
+seqToMTFB DS.Empty = (DS.empty,DS.empty)
+seqToMTFB xs = do
+  iMTFB xs (nubSeq' xs) (DS.empty,DS.empty) (-1 :: Int)
+  where
+    iMTFB :: Seq (Maybe ByteString)
+          -> Seq (Maybe ByteString)
+          -> (Seq Int, Seq (Maybe ByteString))
+          -> Int
+          -> (Seq Int,Seq (Maybe ByteString))
+    iMTFB DS.Empty _ (si, sb) _ = (si, sb)
+    iMTFB (y :<| ys) stack (si, sb) count = do
+      if | count == (-1) -> do
+             case (DS.findIndexL (\z -> z == y) stack) of
+               Nothing -> iMTFB ys stack (si, stack) 1
+               Just i -> do
+                 let newheade = DS.index stack i
+                     stack' = DS.deleteAt i stack
+                 iMTFB ys stack (si |> i, newheade <| stack') 1
+         | otherwise -> do
+             case DS.findIndexL (\z -> z == y) sb of
+               Nothing -> iMTFB ys stack (si, sb) count
+               Just i -> do
+                 let newheade = DS.index sb i
+                     sb' = DS.deleteAt i sb
+                 iMTFB ys stack (si |> i, newheade <| sb') count
+{-
 seqToMTFB DS.Empty      = CMST.runST $ do
   bmtfseqstackempty  <- emptySTMTFLSSeqB
   bmtfseqstackemptyr <- readSTRef bmtfseqstackempty
@@ -269,6 +295,7 @@ seqToMTFB xs            = CMST.runST $ do
                                            bmtfil
                                            bmtfss
                                            bmtfcs
+-}
 
 {-------------------------------}
 

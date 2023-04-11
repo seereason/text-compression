@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedLists  #-}
 
 
 -- |
@@ -66,6 +67,7 @@ module Data.RLE.Internal ( -- * Base RLE types
 
 import Control.Monad as CM
 import Control.Monad.ST as CMST
+import Control.Monad.Writer
 import Data.ByteString as BS
 import Data.ByteString.Char8 as BSC8 (pack,unpack)
 import Data.Maybe as DMaybe (fromJust,isJust,isNothing)
@@ -165,6 +167,30 @@ emptySTRLECounter = newSTRef (-1)
 
 -- | Strict state monad function.
 seqToRLE :: forall b. Pack b => RLESeq b -> RLESeq b
+seqToRLE Empty = DS.empty
+seqToRLE (x :<| xs) =
+  execWriter $ iRLE 1 x xs
+  where
+    iRLE :: Int -> Maybe b -> Seq (Maybe b) -> Writer (Seq (Maybe b)) ()
+    iRLE count item DS.Empty =
+      tell [Just (fromString (show count)),
+            item]
+    iRLE count item (Nothing :<| more) = do
+      tell [Just (fromString (show count)),
+            item,
+            Just (fromString (show (1 :: Int))),
+            Nothing]
+      iRLE 1 Nothing more
+    iRLE _ Nothing (y :<| more) = do
+      iRLE 1 y more
+    iRLE count (Just item) (Just y :<| more)
+      | item == y = do
+          iRLE (count + 1) (Just item) more
+    iRLE count item (y :<| more) = do
+      tell [Just (fromString (show count)),
+            item]
+      iRLE 1 y more
+{-
 seqToRLE DS.Empty      = CMST.runST $ do
   brleseqstackempty  <- emptySTRLESeq
   brleseqstackemptyr <- readSTRef brleseqstackempty
@@ -253,6 +279,7 @@ seqToRLE (x DS.:<| xs) = CMST.runST $ do
                        brless
                        brlecs
                        brlets
+-}
 
 {-------------------------}
 
@@ -282,6 +309,19 @@ emptyFSTRLESeq = newSTRef DS.empty
 
 -- | Strict state monad function.
 seqFromRLE :: forall b. Pack b => RLE b -> FRLESeq b
+seqFromRLE (RLE DS.Empty) = DS.empty
+seqFromRLE (RLE xs) = do
+  execWriter $ fromRLE xs
+  where
+    fromRLE :: Seq (Maybe b) -> Writer (Seq (Maybe b)) ()
+    fromRLE (Just _ :<| Nothing :<| more) = do
+      tell [Nothing]
+      fromRLE more
+    fromRLE (Just count :<| Just item :<| more) = do
+      tell (DSI.replicate (read (toString count)) (Just item))
+      fromRLE more
+    fromRLE _ = pure ()
+{-
 seqFromRLE (RLE DS.Empty) = CMST.runST $ do
   fbrleseqstackempty  <- emptyFSTRLESeq
   fbrleseqstackemptyr <- readSTRef fbrleseqstackempty
@@ -330,5 +370,6 @@ seqFromRLE xs              = CMST.runST $ do
       iFRLE (DSI.Seq EmptyT)               _       = pure ()
       iFRLE (DSI.Seq (Single _))           _       = pure ()
       iFRLE (DSI.Seq (Deep _ _ _ _))       _       = pure ()
+-}
 
 {---------------------------}
